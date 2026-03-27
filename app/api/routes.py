@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.prompts.listener import LISTENER_PROMPT
 from app.prompts.questioner import QUESTIONER_PROMPT
-from app.prompts.patternreader import PATTERN_READER_PROMPT
+from app.prompts.pattern_reader import PATTERN_READER_PROMPT
 from app.schemas.agent import (
     AgentRequest,
     AgentResponse,
