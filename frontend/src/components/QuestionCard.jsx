@@ -1,28 +1,103 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function inferQuickReplies(question) {
-  const text = `${question.question} ${question.rationale}`.toLowerCase();
+  if (Array.isArray(question.answer_choices) && question.answer_choices.length > 0) {
+    return question.answer_choices;
+  }
 
-  if (text.includes("how long")) {
+  const questionText = `${question.question || ""}`.toLowerCase().trim();
+  const category = `${question.category || ""}`.toLowerCase();
+  const rationale = `${question.rationale || ""}`.toLowerCase();
+
+  if (questionText.includes(", and ") || questionText.includes("? are ") || questionText.includes("? do ")) {
+    return [];
+  }
+
+  if (questionText.startsWith("how long have you been")) {
     return ["Less than 1 year", "1-3 years", "More than 3 years"];
   }
 
   if (
-    text.startsWith("are you") ||
-    text.startsWith("do you") ||
-    text.startsWith("have you") ||
-    text.includes(" does your ") ||
-    text.includes(" do you ")
+    questionText.includes("currently employed") ||
+    questionText.includes("fresh graduate") ||
+    questionText.includes("job offer in hand")
   ) {
-    return ["Yes", "No", "Not sure"];
+    return ["Working now", "Fresh graduate", "Offer in hand"];
   }
 
-  if (text.includes("monthly income") || text.includes("income and savings")) {
-    return ["No income now", "Some savings", "Stable income"];
+  if (
+    questionText.includes("monthly income") ||
+    questionText.includes("survive with zero income") ||
+    questionText.includes("financial support situation")
+  ) {
+    return ["Less than 3 months", "3-6 months", "More than 6 months"];
   }
 
-  if (text.includes("partner") || text.includes("marry") || text.includes("marriage")) {
+  if (
+    questionText.includes("current age") ||
+    questionText.includes("educational qualification") ||
+    questionText.includes("degree, field, graduation year")
+  ) {
+    return [];
+  }
+
+  if (
+    questionText.includes("savings") &&
+    questionText.includes("family support") &&
+    questionText.includes("take loans")
+  ) {
+    return ["Have savings", "Family support available", "Would need loans"];
+  }
+
+  if (
+    questionText.includes("partner want to get married") ||
+    questionText.includes("same timeline")
+  ) {
     return ["Same timeline", "Different timeline", "Not discussed clearly"];
+  }
+
+  if (
+    questionText.includes("live with") ||
+    questionText.includes("with parents") ||
+    questionText.includes("renting") ||
+    questionText.includes("own place")
+  ) {
+    return ["With parents", "Renting now", "Own place"];
+  }
+
+  if (
+    category === "financial_reality" &&
+    (questionText.includes("savings") || rationale.includes("runway"))
+  ) {
+    return ["No savings", "Some savings", "Strong runway"];
+  }
+
+  if (
+    category === "financial_reality" &&
+    (questionText.includes("loan") || questionText.includes("debt"))
+  ) {
+    return ["No major debt", "Some debt", "Heavy debt pressure"];
+  }
+
+  if (
+    category === "practical_constraints" &&
+    (questionText.includes("timeline") || questionText.includes("when"))
+  ) {
+    return ["Within 3 months", "3-12 months", "More than 1 year"];
+  }
+
+  if (
+    category === "practical_constraints" &&
+    (questionText.includes("attempt") || questionText.includes("preparation stage"))
+  ) {
+    return ["Just starting", "Already preparing", "Tried before"];
+  }
+
+  if (
+    category === "emotional_risk" &&
+    (questionText.includes("fear") || questionText.includes("worst thing"))
+  ) {
+    return ["Fear of failure", "Fear of regret", "Fear of instability"];
   }
 
   return [];
@@ -38,6 +113,10 @@ export default function QuestionCard({
 }) {
   const [freeAnswer, setFreeAnswer] = useState("");
   const quickReplies = inferQuickReplies(question);
+
+  useEffect(() => {
+    setFreeAnswer("");
+  }, [question.question_id]);
 
   function submitFreeAnswer() {
     const value = freeAnswer.trim();

@@ -28,9 +28,11 @@ export default function Composer({ value, onChange, onSubmit, disabled, placehol
         placeholder={placeholder}
         maxLength={500}
         disabled={disabled}
-        rows={3}
+        rows={2}
       />
-      <button type="submit" disabled={disabled}>Analyze</button>
+      <button type="submit" disabled={disabled} aria-label="Send decision">
+        <span className="composer-send-icon" aria-hidden="true">↑</span>
+      </button>
     </form>
   );
 }

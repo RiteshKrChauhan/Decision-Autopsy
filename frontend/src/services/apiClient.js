@@ -87,6 +87,14 @@ export async function runQuestioner(context, userMessage = "Ask the next best qu
   });
 }
 
+export async function runPatternReader(context, userMessage = "Identify the strongest pattern in how this decision is being framed.") {
+  return postApi("/api/v1/pattern-reader", {
+    context,
+    input: { user_message: userMessage },
+    metadata: buildMetadata(`pattern-reader-${Date.now()}`),
+  });
+}
+
 export async function getBackendHealth() {
   const response = await fetch(`${config.apiBaseUrl}/health`);
   if (!response.ok) {

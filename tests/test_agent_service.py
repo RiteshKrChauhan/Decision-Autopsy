@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from app.core.settings import Settings
-from app.schemas.agent import AgentRequest, ListenerOutput
+from app.schemas.agent import AgentRequest, ListenerOutput, QuestionerOutput
 from app.services.agents import AgentExecutor
 from app.services.exceptions import AgentExecutionError
 from app.services.llm import ClaudeCompatibleClient
@@ -133,4 +133,54 @@ async def test_agent_executor_normalizes_nullable_listener_fields() -> None:
     assert response.output.situation_summary == ""
     assert response.output.missing_information == []
     assert response.output.emotional_signals == []
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_agent_executor_simplifies_compound_questioner_output() -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "output_text": """
+                {
+                  "recommended_focus": "financial_reality",
+                  "questions": [
+                    {
+                      "question_id": "q1",
+                      "question": "What is your current monthly income (if employed) or financial support situation (if student), and how many months could you sustain yourself without new income?",
+                      "priority": "critical",
+                      "category": "financial_reality",
+                      "rationale": "Need runway."
+                    }
+                  ]
+                }
+                """,
+            },
+        )
+    )
+    client = httpx.AsyncClient(
+        transport=transport,
+        base_url="https://mock-provider.test",
+    )
+    provider = ClaudeCompatibleClient(
+        settings=Settings(
+            api_key="test-key",
+            base_url="https://mock-provider.test",
+            model="mock-model",
+            timeout_seconds=5,
+            debug_raw_text=False,
+        ),
+        http_client=client,
+    )
+
+    executor = AgentExecutor(provider)
+    response = await executor.run_structured_agent(
+        agent_name="questioner",
+        prompt="prompt",
+        request=_request(),
+        output_model=QuestionerOutput,
+    )
+
+    assert response.output.questions[0].question == "How many months could you sustain yourself without new income?"
     await client.aclose()

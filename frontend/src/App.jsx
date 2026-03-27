@@ -3,6 +3,7 @@ import {
   getApiUsage,
   getBackendHealth,
   runListener,
+  runPatternReader,
   runQuestioner,
   subscribeToApiDebug,
 } from "./services/apiClient.js";
@@ -12,6 +13,14 @@ import QuestionCard from "./components/QuestionCard.jsx";
 import Composer from "./components/Composer.jsx";
 
 const STORAGE_KEY = "decision-autopsy-sessions-v2";
+const MAX_INTAKE_STEPS = 4;
+const MIN_ANSWERED_BEFORE_HANDOFF = 3;
+const QUESTION_STOP_WORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "your", "you", "are", "have",
+  "will", "would", "what", "when", "where", "which", "why", "from", "into",
+  "about", "than", "them", "they", "their", "then", "just", "does", "did",
+  "has", "had", "how", "can", "could", "should", "been", "being", "want",
+]);
 
 function createSessionId() {
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -127,9 +136,86 @@ function normalizeQuestionRecord(question, answer) {
     question_id: question.question_id,
     question: question.question,
     priority: question.priority,
+    category: question.category,
     rationale: question.rationale,
     answer,
   };
+}
+
+function normalizeQuestionText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeQuestion(value) {
+  return normalizeQuestionText(value)
+    .split(" ")
+    .filter((token) => token.length > 2 && !QUESTION_STOP_WORDS.has(token));
+}
+
+function isSameQuestion(left, right) {
+  const normalizedLeft = normalizeQuestionText(left);
+  const normalizedRight = normalizeQuestionText(right);
+
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+  if (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft)) {
+    return true;
+  }
+
+  const leftTokens = new Set(tokenizeQuestion(left));
+  const rightTokens = new Set(tokenizeQuestion(right));
+  if (leftTokens.size === 0 || rightTokens.size === 0) return false;
+
+  let overlap = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) overlap += 1;
+  }
+
+  const denominator = Math.max(leftTokens.size, rightTokens.size);
+  return denominator > 0 && overlap / denominator >= 0.7;
+}
+
+function dedupeQuestions(questions, ctx, pendingQuestion) {
+  const seenQuestions = [
+    ...ctx.question_history.map((item) => item.question),
+    ...ctx.active_questions.map((item) => item.question),
+    pendingQuestion?.question,
+  ].filter(Boolean);
+
+  const fresh = [];
+
+  for (const question of questions) {
+    const isKnown = seenQuestions.some((item) => isSameQuestion(item, question.question));
+    const isDuplicateInBatch = fresh.some((item) => isSameQuestion(item.question, question.question));
+    const wasSkipped = ctx.skipped.includes(question.question_id);
+
+    if (isKnown || isDuplicateInBatch || wasSkipped) {
+      continue;
+    }
+
+    fresh.push(question);
+  }
+
+  return fresh;
+}
+
+function shouldCompleteIntake(nextCtx, freshQuestions) {
+  const answeredCount = nextCtx.question_history.filter((item) => item.answer).length;
+  const resolvedCount = nextCtx.question_history.length;
+
+  if (resolvedCount >= MAX_INTAKE_STEPS) {
+    return true;
+  }
+
+  if (answeredCount >= MIN_ANSWERED_BEFORE_HANDOFF && freshQuestions.length === 0) {
+    return true;
+  }
+
+  return false;
 }
 
 function formatNumber(value) {
@@ -218,6 +304,7 @@ export default function App() {
   const [usageSnapshot, setUsageSnapshot] = useState(null);
   const [usageError, setUsageError] = useState("");
   const [usageLoading, setUsageLoading] = useState(false);
+  const [quoteIndex, setQuoteIndex] = useState(0);
   const threadBoardRef = useRef(null);
 
   const ctx = currentSession?.ctx ?? createInitialContext();
@@ -247,6 +334,7 @@ export default function App() {
     () => [...sessions].sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt)),
     [sessions]
   );
+  const chatTitle = ctx.decision || "New decision";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -280,6 +368,16 @@ export default function App() {
     if (!showApiPanel) return;
     refreshUsage();
   }, [showApiPanel]);
+
+  useEffect(() => {
+    if (view !== "home") return undefined;
+
+    const timer = setInterval(() => {
+      setQuoteIndex((current) => (current + 1) % 3);
+    }, 3200);
+
+    return () => clearInterval(timer);
+  }, [view]);
 
   function updateCurrentSession(transform) {
     setCurrentSession((current) => {
@@ -342,6 +440,18 @@ export default function App() {
     });
   }
 
+  function deleteSession(sessionId) {
+    setSessions((previous) => previous.filter((item) => item.id !== sessionId));
+
+    if (currentSession?.id === sessionId) {
+      runWithTransition(() => {
+        setCurrentSession(null);
+        setInputValue("");
+        setView("home");
+      });
+    }
+  }
+
   function closeChat() {
     runWithTransition(() => {
       if (currentSession) {
@@ -368,6 +478,57 @@ export default function App() {
     }
   }
 
+  async function finalizeIntake(nextCtx) {
+    updateCurrentSession((current) => ({
+      ...current,
+      isTyping: true,
+      state: "analysis",
+      pendingQuestion: null,
+      ctx: {
+        ...nextCtx,
+        active_questions: [],
+      },
+    }));
+
+    const response = await safeRequest(() => (
+      runPatternReader(buildBackendContext(nextCtx), "Identify the strongest pattern in how I am framing this decision so far.")
+    ));
+
+    if (!response) {
+      updateCurrentSession((current) => ({
+        ...current,
+        isTyping: false,
+        state: "complete",
+        pendingQuestion: null,
+        ctx: {
+          ...current.ctx,
+          active_questions: [],
+        },
+      }));
+      return;
+    }
+
+    updateCurrentSession((current) => ({
+      ...current,
+      isTyping: false,
+      state: "complete",
+      pendingQuestion: null,
+      ctx: {
+        ...current.ctx,
+        active_questions: [],
+      },
+      messages: [
+        ...current.messages,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: "ai",
+          content: response.output.observation,
+          muted: response.output.sub,
+        },
+      ],
+    }));
+  }
+
   async function fetchQuestions(nextCtx, prompt) {
     updateCurrentSession((current) => ({
       ...current,
@@ -379,7 +540,14 @@ export default function App() {
     const response = await safeRequest(() => runQuestioner(buildBackendContext(nextCtx), prompt));
     if (!response) return;
 
-    const questions = response.output.questions ?? [];
+    const proposedQuestions = response.output.questions ?? [];
+    const questions = dedupeQuestions(proposedQuestions, nextCtx, pendingQuestion);
+
+    if (shouldCompleteIntake(nextCtx, questions)) {
+      await finalizeIntake(nextCtx);
+      return;
+    }
+
     const nextQuestion = questions[0] ?? null;
 
     updateCurrentSession((current) => ({
@@ -398,7 +566,7 @@ export default function App() {
             {
               id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               type: "ai",
-              content: "Listener and Questioner completed. Downstream agents are not wired into the UI yet.",
+              content: "I have enough intake context for now, so I am pausing the questions here.",
             },
           ],
     }));
@@ -494,6 +662,11 @@ export default function App() {
       return;
     }
 
+    if (shouldCompleteIntake(nextCtx, [])) {
+      await finalizeIntake(nextCtx);
+      return;
+    }
+
     await fetchQuestions(nextCtx, "Given the current answers, ask the next best unanswered question.");
   }
 
@@ -526,6 +699,11 @@ export default function App() {
       return;
     }
 
+    if (shouldCompleteIntake(nextCtx, [])) {
+      await finalizeIntake(nextCtx);
+      return;
+    }
+
     await fetchQuestions(nextCtx, "A question was skipped. Ask the next best unanswered question.");
   }
 
@@ -551,9 +729,9 @@ export default function App() {
     : "0%";
 
   const homeQuote = useMemo(() => [
-    "Good decisions usually fail before they are made. They fail when the real trade-off stays unnamed.",
-    "Decision Autopsy turns a vague choice into a visible one: what you are optimizing for, what is still unknown, and what fear is steering the answer.",
-    "It does not think for you. It forces the decision into the open so you can inspect it properly.",
+    "The clearest decisions usually begin with the right question.",
+    "What feels confusing gets sharper when the trade-off is named.",
+    "Clarity starts when the decision stops hiding behind noise.",
   ], []);
 
   return (
@@ -680,52 +858,21 @@ export default function App() {
 
         {view === "home" ? (
           <main className="home-layout screen-panel">
-            <section className="home-hero app-frame">
-              <div className="hero-grid">
-                <div className="hero-main">
-                  <div className="starter-kicker">What it does</div>
-                  <div className="quote-stack">
-                    {homeQuote.map((item) => (
-                      <p key={item}>{item}</p>
-                    ))}
-                  </div>
-                  <div className="home-actions">
-                    <button className="primary-btn" type="button" onClick={openNewChat}>
-                      Start a new autopsy
-                    </button>
+            <section className="home-unified app-frame">
+              <section className="home-library">
+                <div className="library-head">
+                  <div>
+                    <h2 className="panel-title">Previous Chats</h2>
                   </div>
                 </div>
 
-                <div className="hero-side">
-                  <div className="hero-note">
-                    <span className="hero-note-label">Outcome</span>
-                    <strong>Expose the real trade-off.</strong>
-                    <p>Get past vague “maybe” thinking and surface the choice you are actually making.</p>
+                {activeSessions.length === 0 ? (
+                  <div className="empty-library">
+                    <p>No chats yet. Start one and it will appear here.</p>
                   </div>
-                  <div className="hero-note">
-                    <span className="hero-note-label">Approach</span>
-                    <strong>Interrogate the decision.</strong>
-                    <p>Decision Autopsy asks what is missing, what is assumed, and what fear is shaping the answer.</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="home-library app-frame">
-              <div className="library-head">
-                <div>
-                  <div className="panel-kicker">Chats</div>
-                  <h2 className="panel-title">Saved decision threads</h2>
-                </div>
-              </div>
-
-              {activeSessions.length === 0 ? (
-                <div className="empty-library">
-                  <p>No chats yet. Start one and it will appear here.</p>
-                </div>
-              ) : (
-                <div className="session-grid">
-                  {activeSessions.map((session) => (
+                ) : (
+                  <div className="session-grid single-column">
+                    {activeSessions.map((session) => (
                     <button
                       key={session.id}
                       type="button"
@@ -734,18 +881,53 @@ export default function App() {
                     >
                       <div className="session-card-top">
                         <span className="session-card-title">{session.title}</span>
-                        <span className="session-card-date">{formatUpdatedAt(session.updatedAt)}</span>
+                        <button
+                          type="button"
+                          className="session-delete-btn"
+                          aria-label={`Delete ${session.title}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteSession(session.id);
+                          }}
+                        >
+                          <span className="trash-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                              <path d="M9 3.75h6a1 1 0 0 1 1 1V6h3a.75.75 0 0 1 0 1.5h-1.02l-.77 10.03A2.5 2.5 0 0 1 14.72 20H9.28a2.5 2.5 0 0 1-2.49-2.47L6.02 7.5H5a.75.75 0 0 1 0-1.5h3V4.75a1 1 0 0 1 1-1Zm5.5 2.25v-.75h-5V6h5ZM8.29 7.5l.75 9.92a1 1 0 0 0 1 .98h4a1 1 0 0 0 1-.98l.75-9.92H8.29ZM10.75 10a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Zm2.5 0a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5a.75.75 0 0 1 .75-.75Z" />
+                            </svg>
+                          </span>
+                        </button>
                       </div>
-                      <p className="session-card-preview">{session.preview}</p>
                     </button>
                   ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="home-hero simple-home-hero">
+                <div className="hero-main">
+                  <div className="starter-kicker">Decision Autopsy</div>
+                  <h2 className="hero-title">Start with one real decision.</h2>
+                  <div className="quote-stack">
+                    <p key={homeQuote[quoteIndex]} className="hero-quote-rotating hero-quote-strong">
+                      {homeQuote[quoteIndex]}
+                    </p>
+                  </div>
+                  <div className="home-actions">
+                    <button className="primary-btn primary-btn-futuristic" type="button" onClick={openNewChat}>
+                      Start a new autopsy
+                    </button>
+                  </div>
                 </div>
-              )}
+              </section>
             </section>
           </main>
         ) : (
           <main className="chat-layout screen-panel">
-            <section className="chat-shell app-frame">
+            <section className="chat-shell chat-shell-wide app-frame">
+              <div className="chat-shell-header simple-chat-header">
+                <h2 className="panel-title chat-panel-title">{startedDecision ? chatTitle : "Start a new decision"}</h2>
+              </div>
+
               <section className="messages thread-board" aria-live="polite" ref={threadBoardRef}>
                 <MessageList
                   messages={messages}
@@ -755,6 +937,7 @@ export default function App() {
 
                 {pendingQuestion ? (
                   <QuestionCard
+                    key={pendingQuestion.question_id}
                     question={pendingQuestion}
                     progressPercent={questionProgressPercent}
                     progressLabel={`${answeredCount + skippedCount} done`}

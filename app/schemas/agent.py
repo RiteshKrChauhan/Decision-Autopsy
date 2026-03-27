@@ -94,6 +94,7 @@ class FollowUpQuestion(BaseModel):
     priority: str
     category: str
     rationale: str
+    answer_choices: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -107,6 +108,8 @@ class FollowUpQuestion(BaseModel):
             "text": "question",
             "reason": "rationale",
             "context": "rationale",
+            "choices": "answer_choices",
+            "options": "answer_choices",
         }
         for source, target in alias_map.items():
             if target not in normalized and source in normalized:
