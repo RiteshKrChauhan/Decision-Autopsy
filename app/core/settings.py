@@ -24,7 +24,7 @@ class Settings:
     )
     model: str = os.getenv("DECISION_AUTOPSY_MODEL", "claude-4.5-sonnet")
     timeout_seconds: float = float(
-        os.getenv("DECISION_AUTOPSY_TIMEOUT_SECONDS", "30")
+        os.getenv("DECISION_AUTOPSY_TIMEOUT_SECONDS", "60")
     )
     debug_raw_text: bool = os.getenv(
         "DECISION_AUTOPSY_DEBUG_RAW_TEXT", "false"

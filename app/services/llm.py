@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -38,26 +39,11 @@ class ClaudeCompatibleClient:
         }
         headers = {"Authorization": f"Bearer {self.settings.api_key}"}
 
-        try:
-            if self._http_client is not None:
-                response = await self._http_client.post(
-                    "/chat/completions", json=payload, headers=headers
-                )
-            else:
-                async with httpx.AsyncClient(
-                    base_url=self.settings.base_url,
-                    timeout=self.settings.timeout_seconds,
-                ) as client:
-                    response = await client.post(
-                        "/chat/completions", json=payload, headers=headers
-                    )
-        except httpx.HTTPError as exc:
-            raise AgentExecutionError(
-                code="provider_request_error",
-                message="Provider request failed.",
-                status_code=502,
-                details={"reason": str(exc)},
-            ) from exc
+        response = await self._post_with_retry(
+            "/chat/completions",
+            json=payload,
+            headers=headers,
+        )
 
         try:
             response.raise_for_status()
@@ -85,22 +71,7 @@ class ClaudeCompatibleClient:
     async def get_usage(self) -> dict[str, Any]:
         headers = {"X-ABBY-API-Key": self.settings.api_key}
 
-        try:
-            if self._http_client is not None:
-                response = await self._http_client.get("/usage", headers=headers)
-            else:
-                async with httpx.AsyncClient(
-                    base_url=self.settings.base_url,
-                    timeout=self.settings.timeout_seconds,
-                ) as client:
-                    response = await client.get("/usage", headers=headers)
-        except httpx.HTTPError as exc:
-            raise AgentExecutionError(
-                code="provider_request_error",
-                message="Provider request failed.",
-                status_code=502,
-                details={"reason": str(exc)},
-            ) from exc
+        response = await self._get_with_retry("/usage", headers=headers)
 
         try:
             response.raise_for_status()
@@ -129,6 +100,69 @@ class ClaudeCompatibleClient:
             )
 
         return data
+
+    async def _post_with_retry(
+        self,
+        path: str,
+        *,
+        json: dict[str, Any],
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        last_exc: httpx.HTTPError | None = None
+        for attempt in range(2):
+            try:
+                if self._http_client is not None:
+                    return await self._http_client.post(path, json=json, headers=headers)
+
+                async with httpx.AsyncClient(
+                    base_url=self.settings.base_url,
+                    timeout=_build_timeout(self.settings.timeout_seconds),
+                ) as client:
+                    return await client.post(path, json=json, headers=headers)
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if not _is_retryable(exc) or attempt == 1:
+                    break
+                await asyncio.sleep(0.35 * (attempt + 1))
+
+        assert last_exc is not None
+        raise AgentExecutionError(
+            code="provider_request_error",
+            message="Provider request failed.",
+            status_code=502,
+            details={"reason": _describe_http_error(last_exc)},
+        ) from last_exc
+
+    async def _get_with_retry(
+        self,
+        path: str,
+        *,
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        last_exc: httpx.HTTPError | None = None
+        for attempt in range(2):
+            try:
+                if self._http_client is not None:
+                    return await self._http_client.get(path, headers=headers)
+
+                async with httpx.AsyncClient(
+                    base_url=self.settings.base_url,
+                    timeout=_build_timeout(self.settings.timeout_seconds),
+                ) as client:
+                    return await client.get(path, headers=headers)
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if not _is_retryable(exc) or attempt == 1:
+                    break
+                await asyncio.sleep(0.35 * (attempt + 1))
+
+        assert last_exc is not None
+        raise AgentExecutionError(
+            code="provider_request_error",
+            message="Provider request failed.",
+            status_code=502,
+            details={"reason": _describe_http_error(last_exc)},
+        ) from last_exc
 
 
 def _extract_text(data: dict[str, Any]) -> str:
@@ -176,6 +210,34 @@ def _serialize_input_payload(input_payload: dict[str, Any]) -> str:
     import json
 
     return json.dumps(input_payload, ensure_ascii=True)
+
+
+def _build_timeout(total_seconds: float) -> httpx.Timeout:
+    return httpx.Timeout(
+        timeout=total_seconds,
+        connect=min(10.0, total_seconds),
+        read=total_seconds,
+        write=total_seconds,
+        pool=min(10.0, total_seconds),
+    )
+
+
+def _is_retryable(exc: httpx.HTTPError) -> bool:
+    return isinstance(
+        exc,
+        (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            httpx.RemoteProtocolError,
+        ),
+    )
+
+
+def _describe_http_error(exc: httpx.HTTPError) -> str:
+    text = str(exc).strip()
+    if text:
+        return text
+    return exc.__class__.__name__
 
 
 def get_llm_client() -> ClaudeCompatibleClient:

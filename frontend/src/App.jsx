@@ -5,16 +5,19 @@ import {
   runListener,
   runPatternReader,
   runQuestioner,
+  runSurgeon,
+  runCompanion,
   subscribeToApiDebug,
 } from "./services/apiClient.js";
 import { createInitialContext } from "./state/context.js";
 import MessageList from "./components/MessageList.jsx";
 import QuestionCard from "./components/QuestionCard.jsx";
 import Composer from "./components/Composer.jsx";
+import FuturesPanel from "./components/FuturesPanel.jsx";
 
 const STORAGE_KEY = "decision-autopsy-sessions-v2";
-const MAX_INTAKE_STEPS = 4;
-const MIN_ANSWERED_BEFORE_HANDOFF = 3;
+const MAX_INTAKE_STEPS = 3;
+const MIN_ANSWERED_BEFORE_HANDOFF = 2;
 const QUESTION_STOP_WORDS = new Set([
   "the", "and", "for", "with", "that", "this", "your", "you", "are", "have",
   "will", "would", "what", "when", "where", "which", "why", "from", "into",
@@ -37,6 +40,7 @@ function createDraftSession(overrides = {}) {
     pendingQuestion: null,
     state: "idle",
     isTyping: false,
+    analysisStage: "",
     ...overrides,
   };
 }
@@ -99,6 +103,7 @@ function loadSessions() {
       },
       messages: Array.isArray(item.messages) ? item.messages : [],
       pendingQuestion: item.pendingQuestion ?? null,
+      analysisStage: item.analysisStage ?? "",
     }));
   } catch {
     return [];
@@ -128,6 +133,8 @@ function buildBackendContext(ctx) {
     },
     listener_result: ctx.listener_result,
     question_history: ctx.question_history,
+    pattern_analysis: ctx.pattern_analysis,
+    autopsy: ctx.autopsy,
   };
 }
 
@@ -204,18 +211,127 @@ function dedupeQuestions(questions, ctx, pendingQuestion) {
 }
 
 function shouldCompleteIntake(nextCtx, freshQuestions) {
-  const answeredCount = nextCtx.question_history.filter((item) => item.answer).length;
+  const answeredQuestions = nextCtx.question_history.filter((item) => item.answer);
+  const answeredCount = answeredQuestions.length;
   const resolvedCount = nextCtx.question_history.length;
+  const answeredCategories = new Set(
+    answeredQuestions
+      .map((item) => item.category)
+      .filter(Boolean)
+  );
+  const hasFinancialCoverage = answeredQuestions.some((item) => {
+    const category = String(item.category || "").toLowerCase();
+    return category.includes("financial");
+  });
+  const hasIntentCoverage = answeredQuestions.some((item) => {
+    const category = String(item.category || "").toLowerCase();
+    const question = String(item.question || "").toLowerCase();
+    return (
+      category.includes("emotional") ||
+      category.includes("motivation") ||
+      category.includes("goal") ||
+      category.includes("intent") ||
+      question.includes("why") ||
+      question.includes("what need") ||
+      question.includes("trying to solve") ||
+      question.includes("matters more") ||
+      question.includes("fear") ||
+      question.includes("regret") ||
+      question.includes("what are you optimizing for") ||
+      question.includes("what specific outcome")
+    );
+  });
+  const hasEnoughSignal = hasIntentCoverage || hasFinancialCoverage || answeredCategories.size >= 2;
 
   if (resolvedCount >= MAX_INTAKE_STEPS) {
     return true;
   }
 
-  if (answeredCount >= MIN_ANSWERED_BEFORE_HANDOFF && freshQuestions.length === 0) {
+  if (
+    answeredCount >= MIN_ANSWERED_BEFORE_HANDOFF &&
+    freshQuestions.length === 0 &&
+    hasEnoughSignal
+  ) {
+    return true;
+  }
+
+  if (
+    answeredCount >= MIN_ANSWERED_BEFORE_HANDOFF &&
+    hasIntentCoverage &&
+    hasEnoughSignal
+  ) {
     return true;
   }
 
   return false;
+}
+
+function hasAnsweredCategory(ctx, matcher) {
+  return ctx.question_history.some(
+    (item) => item.answer && matcher(String(item.category || "").toLowerCase(), String(item.question || "").toLowerCase())
+  );
+}
+
+function buildFallbackQuestion(ctx) {
+  const hasFinancial = hasAnsweredCategory(ctx, (category) => category.includes("financial"));
+  const hasPractical = hasAnsweredCategory(
+    ctx,
+    (category, question) => category.includes("practical") || question.includes("current situation") || question.includes("timeline")
+  );
+  const hasIntent = hasAnsweredCategory(
+    ctx,
+    (category, question) =>
+      category.includes("emotional") ||
+      category.includes("motivation") ||
+      category.includes("goal") ||
+      category.includes("intent") ||
+      question.includes("what matters more") ||
+      question.includes("trying to solve") ||
+      question.includes("what need") ||
+      question.includes("optimizing for")
+  );
+
+  const fallbackCandidates = [
+    !hasFinancial
+      ? {
+          question_id: "fallback-financial",
+          question: "How many months could you support yourself if this decision reduced your income?",
+          priority: "critical",
+          category: "financial_reality",
+          rationale: "This decision cannot be judged well until your financial runway is clear.",
+          answer_choices: ["Less than 3 months", "3-6 months", "6-12 months", "More than 12 months"],
+        }
+      : null,
+    !hasPractical
+      ? {
+          question_id: "fallback-practical",
+          question: "What is your real situation right now: stable, stuck, or under pressure to change something soon?",
+          priority: "high",
+          category: "practical_constraints",
+          rationale: "The next step depends on whether this is a calm decision or a time-sensitive one.",
+          answer_choices: ["Stable right now", "Stuck but manageable", "Need change soon", "Already under pressure"],
+        }
+      : null,
+    !hasIntent
+      ? {
+          question_id: "fallback-intent",
+          question: "What matters more in this decision right now?",
+          priority: "critical",
+          category: "desired_outcome",
+          rationale: "Until the real priority is named, the decision keeps pretending to be about surface details.",
+          answer_choices: ["More stability", "More freedom", "Less financial strain", "Less regret later"],
+        }
+      : {
+          question_id: "fallback-fear",
+          question: "What feels worse to you three years from now?",
+          priority: "high",
+          category: "emotional_risk",
+          rationale: "This exposes whether you are optimizing for safety, freedom, or regret avoidance.",
+          answer_choices: ["Trying and failing", "Never trying", "Choosing too early", "Choosing too late"],
+        },
+  ].filter(Boolean);
+
+  return fallbackCandidates[0] ?? null;
 }
 
 function formatNumber(value) {
@@ -312,7 +428,8 @@ export default function App() {
   const pendingQuestion = currentSession?.pendingQuestion ?? null;
   const state = currentSession?.state ?? "idle";
   const isTyping = currentSession?.isTyping ?? false;
-  const inputDisabled = ["parsing", "questioning"].includes(state);
+  const analysisStage = currentSession?.analysisStage ?? "";
+  const inputDisabled = ["parsing", "questioning", "analysis", "companion"].includes(state);
   const answeredCount = ctx.question_history.filter((item) => item.answer).length;
   const skippedCount = ctx.skipped.length;
   const missingItems = ctx.listener_result?.missing_information ?? [];
@@ -335,6 +452,8 @@ export default function App() {
     [sessions]
   );
   const chatTitle = ctx.decision || "New decision";
+  const futures = Array.isArray(ctx.autopsy?.futures) ? ctx.autopsy.futures : [];
+  const hasFutures = futures.length === 4;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -472,6 +591,7 @@ export default function App() {
         ...current,
         isTyping: false,
         state: "error",
+        analysisStage: "",
       }));
       addMessage("error", "The live backend request failed. Check the backend server and try again.");
       return null;
@@ -483,6 +603,7 @@ export default function App() {
       ...current,
       isTyping: true,
       state: "analysis",
+      analysisStage: "Reading your answers and finding the real pattern.",
       pendingQuestion: null,
       ctx: {
         ...nextCtx,
@@ -499,6 +620,7 @@ export default function App() {
         ...current,
         isTyping: false,
         state: "complete",
+        analysisStage: "",
         pendingQuestion: null,
         ctx: {
           ...current.ctx,
@@ -508,22 +630,85 @@ export default function App() {
       return;
     }
 
+    const patternCtx = {
+      ...nextCtx,
+      pattern_analysis: {
+        ...nextCtx.pattern_analysis,
+        observation: response.output.observation,
+        sub: response.output.sub,
+      },
+    };
+
     updateCurrentSession((current) => ({
       ...current,
-      isTyping: false,
-      state: "complete",
+      isTyping: true,
+      state: "analysis",
+      analysisStage: "Pattern found. Building the futures now.",
       pendingQuestion: null,
       ctx: {
         ...current.ctx,
         active_questions: [],
+        pattern_analysis: patternCtx.pattern_analysis,
+      },
+      messages: [
+        ...current.messages,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: "system",
+          content: response.output.observation,
+          muted: response.output.sub,
+        },
+      ],
+    }));
+
+    const surgeonResponse = await safeRequest(() => (
+      runSurgeon(buildBackendContext(patternCtx), "Generate the four futures, the fork point, and the one action to take.")
+    ));
+
+    if (!surgeonResponse) {
+      updateCurrentSession((current) => ({
+        ...current,
+        isTyping: false,
+        state: "complete",
+        analysisStage: "",
+        pendingQuestion: null,
+        ctx: {
+          ...current.ctx,
+          active_questions: [],
+        },
+      }));
+      return;
+    }
+
+    const autopsyCtx = {
+      ...patternCtx,
+      autopsy: {
+        timeline_ready: true,
+        summary: surgeonResponse.output.fork_point.body,
+        futures: surgeonResponse.output.futures,
+        fork_point: surgeonResponse.output.fork_point,
+      },
+    };
+
+    updateCurrentSession((current) => ({
+      ...current,
+      isTyping: false,
+      state: "complete",
+      analysisStage: "",
+      pendingQuestion: null,
+      ctx: {
+        ...current.ctx,
+        active_questions: [],
+        pattern_analysis: autopsyCtx.pattern_analysis,
+        autopsy: autopsyCtx.autopsy,
       },
       messages: [
         ...current.messages,
         {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           type: "ai",
-          content: response.output.observation,
-          muted: response.output.sub,
+          content: "Your futures are ready. Read them together before you decide what to do next.",
+          muted: autopsyCtx.autopsy.fork_point.action || null,
         },
       ],
     }));
@@ -534,6 +719,7 @@ export default function App() {
       ...current,
       isTyping: true,
       state: "questioning",
+      analysisStage: "",
       ctx: nextCtx,
     }));
 
@@ -541,11 +727,31 @@ export default function App() {
     if (!response) return;
 
     const proposedQuestions = response.output.questions ?? [];
-    const questions = dedupeQuestions(proposedQuestions, nextCtx, pendingQuestion);
+    let questions = dedupeQuestions(proposedQuestions, nextCtx, pendingQuestion);
 
     if (shouldCompleteIntake(nextCtx, questions)) {
       await finalizeIntake(nextCtx);
       return;
+    }
+
+    if (questions.length === 0) {
+      const retryResponse = await safeRequest(() => (
+        runQuestioner(
+          buildBackendContext(nextCtx),
+          "Ask exactly one next unanswered question. Do not stop early. Ask one direct question that moves the decision forward."
+        )
+      ));
+
+      if (retryResponse) {
+        questions = dedupeQuestions(retryResponse.output.questions ?? [], nextCtx, pendingQuestion);
+      }
+    }
+
+    if (questions.length === 0 && !shouldCompleteIntake(nextCtx, [])) {
+      const fallbackQuestion = buildFallbackQuestion(nextCtx);
+      if (fallbackQuestion) {
+        questions = [fallbackQuestion];
+      }
     }
 
     const nextQuestion = questions[0] ?? null;
@@ -554,21 +760,13 @@ export default function App() {
       ...current,
       isTyping: false,
       state: nextQuestion ? "questioning" : "complete",
+      analysisStage: "",
       pendingQuestion: nextQuestion,
       ctx: {
         ...current.ctx,
         active_questions: questions,
       },
-      messages: nextQuestion
-        ? current.messages
-        : [
-            ...current.messages,
-            {
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              type: "ai",
-              content: "I have enough intake context for now, so I am pausing the questions here.",
-            },
-          ],
+      messages: current.messages,
     }));
   }
 
@@ -582,6 +780,7 @@ export default function App() {
       ...current,
       state: "parsing",
       isTyping: true,
+      analysisStage: "",
       ctx: baseCtx,
       messages: [
         ...current.messages,
@@ -609,6 +808,7 @@ export default function App() {
       ...current,
       isTyping: false,
       state: "idle",
+      analysisStage: "",
       ctx: parsedCtx,
       messages: [
         ...current.messages,
@@ -718,7 +918,38 @@ export default function App() {
       return;
     }
 
-    addMessage("error", "Use the active question card below. Free-form follow-up chat is not connected yet.");
+    if (!hasFutures) {
+      addMessage("error", "Use the active question card below while intake is still running.");
+      return;
+    }
+
+    addMessage("user", value);
+    updateCurrentSession((current) => ({
+      ...current,
+      isTyping: true,
+      state: "companion",
+      analysisStage: "",
+    }));
+
+    const response = await safeRequest(() => (
+      runCompanion(buildBackendContext(ctx), value)
+    ));
+    if (!response) return;
+
+    updateCurrentSession((current) => ({
+      ...current,
+      isTyping: false,
+      state: "complete",
+      analysisStage: "",
+      messages: [
+        ...current.messages,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: "ai",
+          content: response.output.reply,
+        },
+      ],
+    }));
   }
 
   const usagePercent = usageSnapshot?.percentage || "0%";
@@ -946,16 +1177,33 @@ export default function App() {
                     onSkip={onQuestionSkip}
                   />
                 ) : null}
+
+                {state === "analysis" && !hasFutures ? (
+                  <section className="analysis-card">
+                    <div className="question-step">Building your decision branches</div>
+                    <h3 className="analysis-title">Moving from intake to futures</h3>
+                    <p className="analysis-copy">
+                      {analysisStage || "Reading your answers, finding the pattern, and generating the futures."}
+                    </p>
+                  </section>
+                ) : null}
+
+                {hasFutures ? (
+                  <FuturesPanel
+                    futures={futures}
+                    forkPoint={ctx.autopsy?.fork_point}
+                  />
+                ) : null}
               </section>
 
-              {!startedDecision ? (
+              {!startedDecision || hasFutures ? (
                 <section className="composer-wrap">
                   <Composer
                     value={inputValue}
                     onChange={setInputValue}
                     onSubmit={onSubmitInput}
                     disabled={inputDisabled}
-                    placeholder="Describe a decision you're facing..."
+                    placeholder={!startedDecision ? "Describe a decision you're facing..." : "Ask a follow-up about these futures..."}
                   />
                 </section>
               ) : (

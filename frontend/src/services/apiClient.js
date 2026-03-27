@@ -95,6 +95,22 @@ export async function runPatternReader(context, userMessage = "Identify the stro
   });
 }
 
+export async function runSurgeon(context, userMessage = "Generate the four futures, fork point, and one concrete action.") {
+  return postApi("/api/v1/surgeon", {
+    context,
+    input: { user_message: userMessage },
+    metadata: buildMetadata(`surgeon-${Date.now()}`),
+  });
+}
+
+export async function runCompanion(context, userMessage) {
+  return postApi("/api/v1/companion", {
+    context,
+    input: { user_message: userMessage },
+    metadata: buildMetadata(`companion-${Date.now()}`),
+  });
+}
+
 export async function getBackendHealth() {
   const response = await fetch(`${config.apiBaseUrl}/health`);
   if (!response.ok) {

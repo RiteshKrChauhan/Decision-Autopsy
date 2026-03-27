@@ -53,11 +53,36 @@ class QuestionRecord(BaseModel):
 class PatternPlaceholder(BaseModel):
     detected_patterns: list[str] = Field(default_factory=list)
     confidence_notes: list[str] = Field(default_factory=list)
+    observation: str | None = None
+    sub: str | None = None
+
+
+class AutopsyEvent(BaseModel):
+    when: str
+    what: str
+    note: str
+
+
+class AutopsyFuture(BaseModel):
+    id: str
+    color: str
+    label: str
+    title: str
+    summary: str
+    confidence: int
+    events: list[AutopsyEvent] = Field(default_factory=list)
+
+
+class ForkPointSnapshot(BaseModel):
+    body: str | None = None
+    action: str | None = None
 
 
 class AutopsyPlaceholder(BaseModel):
     timeline_ready: bool = False
     summary: str | None = None
+    futures: list[AutopsyFuture] = Field(default_factory=list)
+    fork_point: ForkPointSnapshot = Field(default_factory=ForkPointSnapshot)
 
 
 class Context(BaseModel):
@@ -71,4 +96,3 @@ class Context(BaseModel):
     question_history: list[QuestionRecord] = Field(default_factory=list)
     pattern_analysis: PatternPlaceholder = Field(default_factory=PatternPlaceholder)
     autopsy: AutopsyPlaceholder = Field(default_factory=AutopsyPlaceholder)
-

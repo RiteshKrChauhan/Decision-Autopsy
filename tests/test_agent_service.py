@@ -184,3 +184,46 @@ async def test_agent_executor_simplifies_compound_questioner_output() -> None:
 
     assert response.output.questions[0].question == "How many months could you sustain yourself without new income?"
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_llm_client_retries_transient_provider_failure() -> None:
+    attempts = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(
+            200,
+            json={
+                "output_text": '{"interpreted_decision":"Whether to move abroad","situation_summary":"You are weighing opportunity against uncertainty.","confidence_score":44,"clarity_score":39,"missing_information":["budget"],"emotional_signals":["ambivalence"]}'
+            },
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://mock-provider.test",
+    )
+    provider = ClaudeCompatibleClient(
+        settings=Settings(
+            api_key="test-key",
+            base_url="https://mock-provider.test",
+            model="mock-model",
+            timeout_seconds=5,
+            debug_raw_text=False,
+        ),
+        http_client=client,
+    )
+
+    executor = AgentExecutor(provider)
+    response = await executor.run_structured_agent(
+        agent_name="listener",
+        prompt="prompt",
+        request=_request(),
+        output_model=ListenerOutput,
+    )
+
+    assert attempts["count"] == 2
+    assert response.output.interpreted_decision == "Whether to move abroad"
+    await client.aclose()
