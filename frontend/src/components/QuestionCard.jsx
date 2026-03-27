@@ -27,9 +27,18 @@ function inferQuickReplies(question) {
 
   if (
     questionText.includes("monthly income") ||
+    questionText.includes("take-home income") ||
+    questionText.includes("salary") ||
     questionText.includes("survive with zero income") ||
     questionText.includes("financial support situation")
   ) {
+    if (
+      questionText.includes("monthly income") ||
+      questionText.includes("take-home income") ||
+      questionText.includes("salary")
+    ) {
+      return ["Below INR 30,000/month", "INR 30,000-75,000/month", "Above INR 75,000/month"];
+    }
     return ["Less than 3 months", "3-6 months", "More than 6 months"];
   }
 
@@ -46,7 +55,7 @@ function inferQuickReplies(question) {
     questionText.includes("family support") &&
     questionText.includes("take loans")
   ) {
-    return ["Have savings", "Family support available", "Would need loans"];
+    return ["Family support available", "Some savings", "Would need a loan"];
   }
 
   if (
@@ -69,6 +78,9 @@ function inferQuickReplies(question) {
     category === "financial_reality" &&
     (questionText.includes("savings") || rationale.includes("runway"))
   ) {
+    if (questionText.includes("how much") || questionText.includes("saved")) {
+      return ["Under INR 1 lakh", "INR 1-5 lakh", "Above INR 5 lakh"];
+    }
     return ["No savings", "Some savings", "Strong runway"];
   }
 
@@ -76,7 +88,7 @@ function inferQuickReplies(question) {
     category === "financial_reality" &&
     (questionText.includes("loan") || questionText.includes("debt"))
   ) {
-    return ["No major debt", "Some debt", "Heavy debt pressure"];
+    return ["No major EMIs", "Manageable EMIs", "Heavy debt pressure"];
   }
 
   if (

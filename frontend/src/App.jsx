@@ -454,6 +454,12 @@ export default function App() {
   const chatTitle = ctx.decision || "New decision";
   const futures = Array.isArray(ctx.autopsy?.futures) ? ctx.autopsy.futures : [];
   const hasFutures = futures.length === 4;
+  const homeQuote = useMemo(() => [
+    "AI can help you make better decisions.",
+    "See what each choice leads to before you live it.",
+    "Turn a hard decision into visible outcomes.",
+    "Clarity starts when the future stops being a guess.",
+  ], []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -489,14 +495,14 @@ export default function App() {
   }, [showApiPanel]);
 
   useEffect(() => {
-    if (view !== "home") return undefined;
+    if (view !== "home" && startedDecision) return undefined;
 
     const timer = setInterval(() => {
-      setQuoteIndex((current) => (current + 1) % 3);
+      setQuoteIndex((current) => (current + 1) % homeQuote.length);
     }, 3200);
 
     return () => clearInterval(timer);
-  }, [view]);
+  }, [view, startedDecision, homeQuote.length]);
 
   function updateCurrentSession(transform) {
     setCurrentSession((current) => {
@@ -959,12 +965,6 @@ export default function App() {
     ? `${Math.min((usageSnapshot.month_usage / usageSnapshot.month_limit) * 100, 100)}%`
     : "0%";
 
-  const homeQuote = useMemo(() => [
-    "The clearest decisions usually begin with the right question.",
-    "What feels confusing gets sharper when the trade-off is named.",
-    "Clarity starts when the decision stops hiding behind noise.",
-  ], []);
-
   return (
     <>
       <div className="bg-glow bg-glow-left" />
@@ -975,7 +975,7 @@ export default function App() {
           <div className="api-panel-header">
             <div className="api-panel-title-group">
               <div className="api-panel-kicker">Decision Autopsy</div>
-              <strong>ABBY API Checker</strong>
+              <strong>API Checker</strong>
             </div>
             <button
               className="api-panel-close"
@@ -1060,40 +1060,15 @@ export default function App() {
       ) : null}
 
       <div className="app-shell">
-        <header className="topbar app-frame">
-          <div className="brand-block">
-            <div className="eyebrow">Decision intelligence</div>
-            <h1>Decision Autopsy</h1>
-          </div>
-
-          <div className="topbar-actions">
-            <button
-              className={`status-chip ${liveStatus}`}
-              type="button"
-              onClick={() => runWithTransition(() => setShowApiPanel(true))}
-            >
-              <span className="status-dot" />
-              {liveStatus === "online" ? "Live" : liveStatus === "offline" ? "Offline" : "Checking"}
-            </button>
-            {view === "chat" ? (
-              <button className="ghost-btn icon-btn" type="button" onClick={closeChat} aria-label="Close chat">
-                <span className="icon-plus close-mark" aria-hidden="true">×</span>
-              </button>
-            ) : (
-              <button className="ghost-btn icon-btn" type="button" onClick={openNewChat} aria-label="New Autopsy">
-                <span className="icon-plus" aria-hidden="true">+</span>
-              </button>
-            )}
-          </div>
-        </header>
-
         {view === "home" ? (
-          <main className="home-layout screen-panel">
-            <section className="home-unified app-frame">
-              <section className="home-library">
+          <main className="home-stage screen-panel">
+            <section className="home-card app-frame">
+              <div className="home-card-body">
+                <section className="home-library home-library-compact">
                 <div className="library-head">
                   <div>
                     <h2 className="panel-title">Previous Chats</h2>
+                    <p className="library-subtitle">Reopen a thread or start fresh.</p>
                   </div>
                 </div>
 
@@ -1134,32 +1109,88 @@ export default function App() {
                 )}
               </section>
 
-              <section className="home-hero simple-home-hero">
-                <div className="hero-main">
-                  <div className="starter-kicker">Decision Autopsy</div>
-                  <h2 className="hero-title">Start with one real decision.</h2>
-                  <div className="quote-stack">
-                    <p key={homeQuote[quoteIndex]} className="hero-quote-rotating hero-quote-strong">
-                      {homeQuote[quoteIndex]}
-                    </p>
+                <section className="home-hero home-hero-focused">
+                  <div className="hero-main hero-main-centered">
+                    <div className="hero-aura" aria-hidden="true" />
+                    <div className="quote-stage">
+                      <h1 className="home-hero-title">Decision Autopsy</h1>
+                      <div className="quote-stage-kicker">AI for your decisions</div>
+                      <div className="quote-frame">
+                        <p key={homeQuote[quoteIndex]} className="hero-quote-rotating hero-quote-strong">
+                          {homeQuote[quoteIndex]}
+                        </p>
+                      </div>
+                      <div className="quote-stage-subtle">See the shape of the decision before you commit to it.</div>
+                    </div>
+                    <div className="home-actions">
+                      <button className="start-orbit-btn start-orbit-btn-wide" type="button" onClick={openNewChat}>
+                        <span className="start-orbit-ring" aria-hidden="true" />
+                        <span className="start-orbit-core">
+                          <span className="start-orbit-label">Begin</span>
+                          <span className="start-orbit-arrow" aria-hidden="true">↗</span>
+                        </span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="home-actions">
-                    <button className="primary-btn primary-btn-futuristic" type="button" onClick={openNewChat}>
-                      Start a new autopsy
-                    </button>
-                  </div>
-                </div>
-              </section>
+                </section>
+              </div>
             </section>
           </main>
         ) : (
+          <>
+            <header className="topbar app-frame">
+              <div className="brand-block">
+                <h1>Decision Autopsy</h1>
+              </div>
+
+              <div className="topbar-actions">
+                <button
+                  className={`status-chip ${liveStatus}`}
+                  type="button"
+                  onClick={() => runWithTransition(() => setShowApiPanel(true))}
+                >
+                  <span className="status-dot" />
+                  {liveStatus === "online" ? "Live" : liveStatus === "offline" ? "Offline" : "Checking"}
+                </button>
+                <button className="ghost-btn icon-btn" type="button" onClick={closeChat} aria-label="Close chat">
+                  <span className="icon-plus close-mark" aria-hidden="true">×</span>
+                </button>
+              </div>
+            </header>
+
           <main className="chat-layout screen-panel">
             <section className="chat-shell chat-shell-wide app-frame">
               <div className="chat-shell-header simple-chat-header">
-                <h2 className="panel-title chat-panel-title">{startedDecision ? chatTitle : "Start a new decision"}</h2>
+                <div className="chat-thread-head">
+                  <h2 className="panel-title chat-panel-title">{startedDecision ? chatTitle : "Start a new decision"}</h2>
+                  <p className="chat-thread-subtitle">
+                    {!startedDecision
+                      ? "Start with one real decision and go from there."
+                      : hasFutures
+                        ? "Look at each path, then keep talking it through."
+                        : "A few sharp answers will make the picture clearer."}
+                  </p>
+                </div>
               </div>
 
               <section className="messages thread-board" aria-live="polite" ref={threadBoardRef}>
+                {!startedDecision && messages.length === 0 ? (
+                  <section className="chat-starter-card">
+                    <div className="chat-starter-aura" aria-hidden="true" />
+                    <div className="chat-starter-body">
+                      <div className="quote-stage-kicker">AI for your decisions</div>
+                      <div className="chat-starter-frame">
+                        <p key={`starter-${homeQuote[quoteIndex]}`} className="hero-quote-rotating chat-starter-quote">
+                          {homeQuote[quoteIndex]}
+                        </p>
+                      </div>
+                      <p className="chat-starter-subtle">
+                        Start with one real decision. The system will take it forward.
+                      </p>
+                    </div>
+                  </section>
+                ) : null}
+
                 <MessageList
                   messages={messages}
                   isTyping={isTyping}
@@ -1211,6 +1242,7 @@ export default function App() {
               )}
             </section>
           </main>
+          </>
         )}
       </div>
     </>

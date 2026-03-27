@@ -154,6 +154,12 @@ def _normalize_answer_choices(question_data: dict[str, Any]) -> list[str]:
     question = str(question_data.get("question") or "").lower()
     category = str(question_data.get("category") or "").lower()
 
+    if "monthly income" in question or "take-home income" in question or "salary" in question:
+        return ["Below INR 30,000/month", "INR 30,000-75,000/month", "Above INR 75,000/month"]
+
+    if "how much do you have saved" in question or ("savings" in question and "how much" in question):
+        return ["Under INR 1 lakh", "INR 1-5 lakh", "Above INR 5 lakh"]
+
     if "employment status" in question or "are you working" in question or "fresh graduate" in question:
         return ["Working", "Studying", "Unemployed"]
 
@@ -164,7 +170,7 @@ def _normalize_answer_choices(question_data: dict[str, Any]) -> list[str]:
         return ["Less than 3 months", "3-6 months", "More than 6 months"]
 
     if "savings" in question or "family support" in question or "take loans" in question:
-        return ["Have savings", "Family support", "Would need loans"]
+        return ["Family support available", "Some savings", "Would need a loan"]
 
     if "partner" in question and "timeline" in question:
         return ["Same timeline", "Different timeline", "Not discussed clearly"]
@@ -177,5 +183,8 @@ def _normalize_answer_choices(question_data: dict[str, Any]) -> list[str]:
 
     if category == "emotional_risk" and ("fear" in question or "worst thing" in question):
         return ["Fear of failure", "Fear of regret", "Fear of instability"]
+
+    if category == "financial_reality" and ("debt" in question or "loan" in question or "emi" in question):
+        return ["No major EMIs", "Manageable EMIs", "Heavy debt pressure"]
 
     return []

@@ -18,9 +18,11 @@ Stateless FastAPI backend for the Decision Autopsy product.
 ## Run locally
 1. Create a virtual environment and install dependencies:
    `pip install -e .[dev]`
-2. Copy `.env.example` values into your shell environment.
+2. Copy `.env.example` to `.env` and fill in your real API key.
 3. Start the API:
    `uvicorn app.main:app --reload`
+
+The backend now loads `.env` automatically from the repo root. It also accepts legacy `ABBY_API_KEY`, `ABBY_MODEL`, and `ABBY_BASE_URL` env vars if those are already present in your shell.
 
 ## Environment variables
 - `DECISION_AUTOPSY_API_KEY`

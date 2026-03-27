@@ -187,6 +187,60 @@ async def test_agent_executor_simplifies_compound_questioner_output() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_executor_adds_indian_money_choices() -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "output_text": """
+                {
+                  "recommended_focus": "financial_reality",
+                  "questions": [
+                    {
+                      "question_id": "income",
+                      "question": "What is your current monthly income?",
+                      "priority": "critical",
+                      "category": "financial_reality",
+                      "rationale": "Need monthly affordability."
+                    }
+                  ]
+                }
+                """,
+            },
+        )
+    )
+    client = httpx.AsyncClient(
+        transport=transport,
+        base_url="https://mock-provider.test",
+    )
+    provider = ClaudeCompatibleClient(
+        settings=Settings(
+            api_key="test-key",
+            base_url="https://mock-provider.test",
+            model="mock-model",
+            timeout_seconds=5,
+            debug_raw_text=False,
+        ),
+        http_client=client,
+    )
+
+    executor = AgentExecutor(provider)
+    response = await executor.run_structured_agent(
+        agent_name="questioner",
+        prompt="prompt",
+        request=_request(),
+        output_model=QuestionerOutput,
+    )
+
+    assert response.output.questions[0].answer_choices == [
+        "Below INR 30,000/month",
+        "INR 30,000-75,000/month",
+        "Above INR 75,000/month",
+    ]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_llm_client_retries_transient_provider_failure() -> None:
     attempts = {"count": 0}
 
