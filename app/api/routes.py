@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, status
 
 from app.prompts.listener import LISTENER_PROMPT
 from app.prompts.questioner import QUESTIONER_PROMPT
+from app.prompts.pattern_reader import PATTERN_READER_PROMPT
 from app.schemas.agent import (
     AgentRequest,
     AgentResponse,
     ListenerOutput,
     QuestionerOutput,
+    PatternReaderOutput,
 )
 from app.services.agents import AgentExecutor, get_agent_executor
 from app.services.agents import get_usage_snapshot
@@ -63,3 +65,21 @@ async def questioner(
         request=request,
         output_model=QuestionerOutput,
     )
+
+@router.post(
+    "/api/v1/pattern-reader",
+    response_model=AgentResponse[PatternReaderOutput],
+    status_code=status.HTTP_200_OK,
+    tags=["agents"],
+)
+async def pattern_reader(
+    request: AgentRequest,
+    executor: AgentExecutor = Depends(get_agent_executor),
+) -> AgentResponse[PatternReaderOutput]:
+    return await executor.run_structured_agent(
+        agent_name="pattern-reader",
+        prompt=PATTERN_READER_PROMPT,
+        request=request,
+        output_model=PatternReaderOutput,
+    )
+

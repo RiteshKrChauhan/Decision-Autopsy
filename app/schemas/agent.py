@@ -119,6 +119,11 @@ class QuestionerOutput(BaseModel):
     questions: list[FollowUpQuestion] = Field(default_factory=list)
 
 
+class PatternReaderOutput(BaseModel):
+    observation: str
+    sub: str
+
+
 class ErrorBody(BaseModel):
     code: str
     message: str
