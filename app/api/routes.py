@@ -3,12 +3,16 @@ from fastapi import APIRouter, Depends, status
 from app.prompts.listener import LISTENER_PROMPT
 from app.prompts.questioner import QUESTIONER_PROMPT
 from app.prompts.pattern_reader import PATTERN_READER_PROMPT
+from app.prompts.surgeon import SURGEON_PROMPT
+from app.prompts.companion import COMPANION_PROMPT
 from app.schemas.agent import (
     AgentRequest,
     AgentResponse,
     ListenerOutput,
     QuestionerOutput,
     PatternReaderOutput,
+    SurgeonOutput,
+    CompanionOutput,
 )
 from app.services.agents import AgentExecutor, get_agent_executor
 from app.services.agents import get_usage_snapshot
@@ -82,4 +86,40 @@ async def pattern_reader(
         request=request,
         output_model=PatternReaderOutput,
     )
+
+@router.post(
+    "/api/v1/surgeon",
+    response_model=AgentResponse[SurgeonOutput],
+    status_code=status.HTTP_200_OK,
+    tags=["agents"],
+)
+async def surgeon(
+    request: AgentRequest,
+    executor: AgentExecutor = Depends(get_agent_executor),
+) -> AgentResponse[SurgeonOutput]:
+    return await executor.run_structured_agent(
+        agent_name="surgeon",
+        prompt=SURGEON_PROMPT,
+        request=request,
+        output_model=SurgeonOutput,
+    )
+
+@router.post(
+    "/api/v1/companion",
+    response_model=AgentResponse[CompanionOutput],
+    status_code=status.HTTP_200_OK,
+    tags=["agents"],
+)
+async def companion(
+    request: AgentRequest,
+    executor: AgentExecutor = Depends(get_agent_executor),
+) -> AgentResponse[CompanionOutput]:
+    return await executor.run_structured_agent(
+        agent_name="companion",
+        prompt=COMPANION_PROMPT,
+        request=request,
+        output_model=CompanionOutput,
+    )
+
+
 
