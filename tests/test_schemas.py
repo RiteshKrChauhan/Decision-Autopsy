@@ -1,6 +1,13 @@
 from pydantic import ValidationError
 
-from app.schemas.agent import AgentRequest, ErrorResponse, ListenerOutput, QuestionerOutput
+from app.schemas.agent import (
+    AgentRequest,
+    CompanionOutput,
+    ErrorResponse,
+    ListenerOutput,
+    QuestionerOutput,
+    SurgeonOutput,
+)
 
 
 def test_agent_request_accepts_compact_context() -> None:
@@ -124,3 +131,156 @@ def test_error_response_contract() -> None:
     )
 
     assert error.error.code == "invalid_model_output"
+
+
+def test_surgeon_output_contract() -> None:
+    output = SurgeonOutput.model_validate(
+        {
+            "futures": [
+                {
+                    "id": "f1",
+                    "color": "#2dd68a",
+                    "label": "If it works",
+                    "title": "You build traction early",
+                    "summary": "You validate demand quickly and commit fully.",
+                    "confidence": 56,
+                    "events": [
+                        {"when": "Month 3", "what": "You ship an MVP", "note": "You stop planning and start learning from real users."},
+                        {"when": "Month 9", "what": "You hit first revenue", "note": "The decision becomes operational, not theoretical."},
+                        {"when": "Year 2", "what": "You scale distribution", "note": "Your work compounds because the market pulls you forward."},
+                        {"when": "Year 5", "what": "You lead a durable business", "note": "You have leverage and optionality you did not have before."},
+                    ],
+                },
+                {
+                    "id": "f2",
+                    "color": "#e6a830",
+                    "label": "If it struggles",
+                    "title": "You survive the hard middle",
+                    "summary": "Progress is slower, but the path remains alive.",
+                    "confidence": 63,
+                    "events": [
+                        {"when": "Month 3", "what": "Early tests underperform", "note": "You confront weak assumptions while runway is still intact."},
+                        {"when": "Month 9", "what": "You tighten the offer", "note": "Focus replaces excitement and decisions get sharper."},
+                        {"when": "Year 2", "what": "A narrow segment responds", "note": "You build confidence through fit, not hype."},
+                        {"when": "Year 5", "what": "You run a lean operation", "note": "It is not flashy, but it is real and resilient."},
+                    ],
+                },
+                {
+                    "id": "f3",
+                    "color": "#5a8df0",
+                    "label": "If you wait",
+                    "title": "You delay and de-risk",
+                    "summary": "You keep stability while postponing the leap.",
+                    "confidence": 68,
+                    "events": [
+                        {"when": "Month 3", "what": "You stay in your role", "note": "Cash flow stays predictable and pressure drops."},
+                        {"when": "Month 9", "what": "You build part-time", "note": "Momentum exists, but tradeoffs limit velocity."},
+                        {"when": "Year 2", "what": "Progress remains incremental", "note": "Safety is high, but ambition is diluted."},
+                        {"when": "Year 5", "what": "You revisit the same decision", "note": "The question persists because it was never fully tested."},
+                    ],
+                },
+                {
+                    "id": "f4",
+                    "color": "#9a9890",
+                    "label": "If nothing changes",
+                    "title": "You defer until drift decides",
+                    "summary": "Inaction resolves the decision by default.",
+                    "confidence": 100,
+                    "events": [
+                        {"when": "Month 3", "what": "You postpone again", "note": "Urgency fades and habits reassert control."},
+                        {"when": "Month 9", "what": "The window narrows", "note": "External constraints increase while flexibility decreases."},
+                        {"when": "Year 2", "what": "You normalize compromise", "note": "The cost is quiet, but cumulative."},
+                        {"when": "Year 5", "what": "You call it practicality", "note": "The unrealized path becomes a private reference point."},
+                    ],
+                },
+            ],
+            "fork_point": {
+                "body": "Everything in this autopsy hinges on one variable: whether you get first meaningful customer proof before runway pressure forces retreat.",
+                "action": "Talk to three operators in your exact market and ask when demand became undeniable.",
+            },
+        }
+    )
+
+    assert len(output.futures) == 4
+    assert output.futures[0].id == "f1"
+    assert output.futures[3].confidence == 100
+
+
+def test_surgeon_output_rejects_wrong_order() -> None:
+    try:
+        SurgeonOutput.model_validate(
+            {
+                "futures": [
+                    {
+                        "id": "f2",
+                        "color": "#e6a830",
+                        "label": "If it struggles",
+                        "title": "A",
+                        "summary": "A",
+                        "confidence": 60,
+                        "events": [
+                            {"when": "Month 3", "what": "A", "note": "A"},
+                            {"when": "Month 9", "what": "A", "note": "A"},
+                            {"when": "Year 2", "what": "A", "note": "A"},
+                            {"when": "Year 5", "what": "A", "note": "A"},
+                        ],
+                    },
+                    {
+                        "id": "f1",
+                        "color": "#2dd68a",
+                        "label": "If it works",
+                        "title": "B",
+                        "summary": "B",
+                        "confidence": 55,
+                        "events": [
+                            {"when": "Month 3", "what": "B", "note": "B"},
+                            {"when": "Month 9", "what": "B", "note": "B"},
+                            {"when": "Year 2", "what": "B", "note": "B"},
+                            {"when": "Year 5", "what": "B", "note": "B"},
+                        ],
+                    },
+                    {
+                        "id": "f3",
+                        "color": "#5a8df0",
+                        "label": "If you wait",
+                        "title": "C",
+                        "summary": "C",
+                        "confidence": 65,
+                        "events": [
+                            {"when": "Month 3", "what": "C", "note": "C"},
+                            {"when": "Month 9", "what": "C", "note": "C"},
+                            {"when": "Year 2", "what": "C", "note": "C"},
+                            {"when": "Year 5", "what": "C", "note": "C"},
+                        ],
+                    },
+                    {
+                        "id": "f4",
+                        "color": "#9a9890",
+                        "label": "If nothing changes",
+                        "title": "D",
+                        "summary": "D",
+                        "confidence": 100,
+                        "events": [
+                            {"when": "Month 3", "what": "D", "note": "D"},
+                            {"when": "Month 9", "what": "D", "note": "D"},
+                            {"when": "Year 2", "what": "D", "note": "D"},
+                            {"when": "Year 5", "what": "D", "note": "D"},
+                        ],
+                    },
+                ],
+                "fork_point": {"body": "x", "action": "y"},
+            }
+        )
+    except ValidationError as exc:
+        assert "ordered exactly as f1, f2, f3, f4" in str(exc)
+    else:
+        raise AssertionError("ValidationError was expected for invalid future order.")
+
+
+def test_companion_output_requires_non_empty_reply() -> None:
+    try:
+        CompanionOutput.model_validate({"reply": "   ", "rerun": False})
+    except ValidationError as exc:
+        assert "at least 1 character" in str(exc)
+    else:
+        raise AssertionError("ValidationError was expected for empty reply.")
