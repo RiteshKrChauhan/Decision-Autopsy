@@ -1,18 +1,67 @@
 import { config } from "../config.js";
 
-async function postApi(endpoint, body) {
-  const response = await fetch(`${config.apiBaseUrl}${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+const apiDebugStore = {
+  entries: [],
+  listeners: new Set(),
+};
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`${endpoint} failed: ${response.status} ${errorText}`);
+function emitDebugUpdate() {
+  for (const listener of apiDebugStore.listeners) {
+    listener(apiDebugStore.entries);
   }
+}
 
-  return response.json();
+function recordExchange(entry) {
+  apiDebugStore.entries = [entry, ...apiDebugStore.entries].slice(0, 8);
+  emitDebugUpdate();
+}
+
+async function postApi(endpoint, body) {
+  const startedAt = new Date().toISOString();
+
+  try {
+    const response = await fetch(`${config.apiBaseUrl}${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const rawText = await response.text();
+    let parsed = null;
+
+    try {
+      parsed = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      parsed = rawText;
+    }
+
+    recordExchange({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      endpoint,
+      startedAt,
+      ok: response.ok,
+      status: response.status,
+      request: body,
+      response: parsed,
+    });
+
+    if (!response.ok) {
+      throw new Error(`${endpoint} failed: ${response.status} ${rawText}`);
+    }
+
+    return parsed;
+  } catch (error) {
+    recordExchange({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      endpoint,
+      startedAt,
+      ok: false,
+      status: "network_error",
+      request: body,
+      response: { message: error instanceof Error ? error.message : String(error) },
+    });
+    throw error;
+  }
 }
 
 function buildMetadata(requestId) {
@@ -36,4 +85,30 @@ export async function runQuestioner(context, userMessage = "Ask the next best qu
     input: { user_message: userMessage },
     metadata: buildMetadata(`questioner-${Date.now()}`),
   });
+}
+
+export async function getBackendHealth() {
+  const response = await fetch(`${config.apiBaseUrl}/health`);
+  if (!response.ok) {
+    throw new Error(`health failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getApiUsage() {
+  const response = await fetch(`${config.apiBaseUrl}/api/v1/usage`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`/api/v1/usage failed: ${response.status} ${errorText}`);
+  }
+  return response.json();
+}
+
+export function subscribeToApiDebug(listener) {
+  apiDebugStore.listeners.add(listener);
+  listener(apiDebugStore.entries);
+
+  return () => {
+    apiDebugStore.listeners.delete(listener);
+  };
 }

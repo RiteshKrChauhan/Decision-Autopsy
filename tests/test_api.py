@@ -65,6 +65,29 @@ def test_ready(client: TestClient) -> None:
     assert response.json() == {"status": "ready"}
 
 
+def test_usage_endpoint_returns_snapshot(client: TestClient) -> None:
+    async def stub_usage():
+        return {
+            "month_usage": 1140,
+            "month_limit": 20000000,
+            "remaining_tokens": 19998860,
+            "percentage": "0.01%",
+            "reset_at": "2026-04-01T00:00:00Z",
+        }
+
+    from app.api import routes
+
+    original = routes.get_usage_snapshot
+    routes.get_usage_snapshot = stub_usage
+    try:
+        response = client.get("/api/v1/usage")
+    finally:
+        routes.get_usage_snapshot = original
+
+    assert response.status_code == 200
+    assert response.json()["month_limit"] == 20000000
+
+
 def test_listener_endpoint_returns_contract(client: TestClient) -> None:
     client.app.dependency_overrides[get_agent_executor] = lambda: StubExecutor()
 

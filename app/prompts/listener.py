@@ -26,5 +26,5 @@ The response must be a single JSON object with exactly these keys:
 - emotional_signals: array of short strings
 
 Do not rename keys. Do not use floats for scores. Do not return objects inside emotional_signals.
-If the information is missing, use null, empty strings, or empty arrays rather than inventing facts.
+If the information is missing, use empty strings or empty arrays rather than inventing facts.
 """.strip()

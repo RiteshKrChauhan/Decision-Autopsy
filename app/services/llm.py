@@ -82,6 +82,54 @@ class ClaudeCompatibleClient:
         usage = _extract_usage(data)
         return text, usage
 
+    async def get_usage(self) -> dict[str, Any]:
+        headers = {"X-ABBY-API-Key": self.settings.api_key}
+
+        try:
+            if self._http_client is not None:
+                response = await self._http_client.get("/usage", headers=headers)
+            else:
+                async with httpx.AsyncClient(
+                    base_url=self.settings.base_url,
+                    timeout=self.settings.timeout_seconds,
+                ) as client:
+                    response = await client.get("/usage", headers=headers)
+        except httpx.HTTPError as exc:
+            raise AgentExecutionError(
+                code="provider_request_error",
+                message="Provider request failed.",
+                status_code=502,
+                details={"reason": str(exc)},
+            ) from exc
+
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise AgentExecutionError(
+                code="provider_http_error",
+                message="Provider returned a non-success response.",
+                status_code=502,
+                details={"status_code": exc.response.status_code},
+            ) from exc
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise AgentExecutionError(
+                code="provider_invalid_response",
+                message="Provider returned non-JSON content.",
+                status_code=502,
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise AgentExecutionError(
+                code="provider_invalid_response",
+                message="Provider usage response was not a JSON object.",
+                status_code=502,
+            )
+
+        return data
+
 
 def _extract_text(data: dict[str, Any]) -> str:
     choices = data.get("choices")

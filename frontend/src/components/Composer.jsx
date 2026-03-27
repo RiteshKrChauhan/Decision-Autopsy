@@ -22,15 +22,15 @@ export default function Composer({ value, onChange, onSubmit, disabled, placehol
         onSubmit(text);
       }}
     >
-      <input
-        type="text"
+      <textarea
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder={placeholder}
         maxLength={500}
         disabled={disabled}
+        rows={3}
       />
-      <button type="submit" disabled={disabled}>Send</button>
+      <button type="submit" disabled={disabled}>Analyze</button>
     </form>
   );
 }

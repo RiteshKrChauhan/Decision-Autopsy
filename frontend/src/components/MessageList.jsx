@@ -13,7 +13,10 @@ export default function MessageList({ messages, isTyping }) {
         if (message.type === "user") {
           return (
             <article className="msg user" key={message.id}>
-              <div className="bubble">{message.content}</div>
+              <div className="bubble">
+                <div className="message-label">You</div>
+                {message.content}
+              </div>
             </article>
           );
         }
@@ -35,7 +38,10 @@ export default function MessageList({ messages, isTyping }) {
             <article className="msg error ai" key={message.id}>
               <div className="bubble-wrap">
                 <div className="avatar">AI</div>
-                <div className="bubble">{message.content}</div>
+                <div className="bubble">
+                  <div className="message-label">Error</div>
+                  {message.content}
+                </div>
               </div>
             </article>
           );
@@ -46,6 +52,7 @@ export default function MessageList({ messages, isTyping }) {
             <div className="bubble-wrap">
               <div className="avatar">AI</div>
               <div className="bubble">
+                <div className="message-label">AI</div>
                 {message.content}
                 {message.muted ? <div className="muted">{message.muted}</div> : null}
               </div>

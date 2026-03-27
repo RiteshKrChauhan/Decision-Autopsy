@@ -65,3 +65,7 @@ class AgentExecutor:
 
 def get_agent_executor() -> AgentExecutor:
     return AgentExecutor(client=get_llm_client())
+
+
+async def get_usage_snapshot() -> dict[str, Any]:
+    return await get_llm_client().get_usage()

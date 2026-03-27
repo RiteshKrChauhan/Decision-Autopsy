@@ -45,6 +45,13 @@ class ListenerOutput(BaseModel):
     missing_information: list[str] = Field(default_factory=list)
     emotional_signals: list[str] = Field(default_factory=list)
 
+    @field_validator("interpreted_decision", "situation_summary", mode="before")
+    @classmethod
+    def normalize_nullable_strings(cls, value: object) -> object:
+        if value is None:
+            return ""
+        return value
+
     @field_validator("confidence_score", "clarity_score", mode="before")
     @classmethod
     def normalize_scores(cls, value: object) -> object:
@@ -52,9 +59,18 @@ class ListenerOutput(BaseModel):
             return round(value * 100)
         return value
 
+    @field_validator("missing_information", mode="before")
+    @classmethod
+    def normalize_missing_information(cls, value: object) -> object:
+        if value is None:
+            return []
+        return value
+
     @field_validator("emotional_signals", mode="before")
     @classmethod
     def normalize_emotional_signals(cls, value: object) -> object:
+        if value is None:
+            return []
         if not isinstance(value, list):
             return value
 

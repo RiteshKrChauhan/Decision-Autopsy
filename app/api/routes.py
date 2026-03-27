@@ -11,6 +11,7 @@ from app.schemas.agent import (
     PatternReaderOutput,
 )
 from app.services.agents import AgentExecutor, get_agent_executor
+from app.services.agents import get_usage_snapshot
 
 router = APIRouter()
 
@@ -23,6 +24,11 @@ async def health() -> dict[str, str]:
 @router.get("/ready", tags=["platform"])
 async def ready() -> dict[str, str]:
     return {"status": "ready"}
+
+
+@router.get("/api/v1/usage", tags=["platform"])
+async def usage() -> dict[str, object]:
+    return await get_usage_snapshot()
 
 
 @router.post(

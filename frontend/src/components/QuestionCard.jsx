@@ -14,13 +14,14 @@ export default function QuestionCard({ question, confidence, confidenceColor, on
     <article className="msg ai">
       <div className="bubble-wrap">
         <div className="avatar">AI</div>
-        <div className="bubble">
+        <div className="bubble question-shell">
+          <div className="message-label">Question</div>
           <p className="question-text">{question.question}</p>
           <p className="question-context">{question.rationale}</p>
 
           <div className="question-meta-row">
-            <span className="meta-pill">Priority {question.priority}</span>
-            <span className="meta-pill">{question.category}</span>
+            <span className="meta-pill emphasis-pill">Priority {question.priority}</span>
+            <span className="meta-pill">{question.category.replaceAll("_", " ")}</span>
           </div>
 
           <div className="free-answer">
@@ -50,7 +51,7 @@ export default function QuestionCard({ question, confidence, confidenceColor, on
             </div>
 
             <button className="skip-link" type="button" onClick={() => onSkip(question)}>
-              Skip this -&gt;
+              Skip for now
             </button>
           </div>
         </div>
