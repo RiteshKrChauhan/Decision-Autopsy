@@ -51,7 +51,7 @@ export default function FuturesPanel({ futures, forkPoint }) {
               <span className="future-switch-index">{String(index + 1).padStart(2, "0")}</span>
               <span className="future-switch-copy">
                 <span className="future-switch-label">{future.label}</span>
-                <span className="future-switch-meta">{future.confidence}% likely</span>
+                <span className="future-switch-meta"> </span>
               </span>
             </button>
           ))}
@@ -60,7 +60,7 @@ export default function FuturesPanel({ futures, forkPoint }) {
         <article className="future-spotlight" style={{ "--future-color": activeFuture.color }}>
           <div className="future-spotlight-top">
             <span className="future-label">{activeFuture.label}</span>
-            <strong className="future-confidence">{activeFuture.confidence}% likely</strong>
+            <strong className="future-confidence">Detailed timeline</strong>
           </div>
 
           <h4>{activeFuture.title}</h4>

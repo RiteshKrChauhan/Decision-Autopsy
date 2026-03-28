@@ -38,15 +38,6 @@ export default function FuturesGrid({
                   <span className="meta-pill">Upside {future.upside_score ?? "--"}</span>
                   <span className="meta-pill">Regret {future.regret_score ?? "--"}</span>
                 </div>
-                <div className="confidence-row">
-                  <div className="confidence-track">
-                    <div
-                      className="confidence-fill"
-                      style={{ width: `${future.confidence}%`, background: future.color }}
-                    />
-                  </div>
-                  <span className="confidence-value">{future.confidence}%</span>
-                </div>
               </div>
 
               <div className="timeline">
