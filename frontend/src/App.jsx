@@ -14,10 +14,13 @@ import MessageList from "./components/MessageList.jsx";
 import QuestionCard from "./components/QuestionCard.jsx";
 import Composer from "./components/Composer.jsx";
 import FuturesPanel from "./components/FuturesPanel.jsx";
+import ChatHistorySidebar from "./components/ChatHistorySidebar.jsx";
+import ChatPageLayout from "./components/ChatPageLayout.jsx";
 
 const STORAGE_KEY = "decision-autopsy-sessions-v2";
 const MAX_INTAKE_STEPS = 3;
 const MIN_ANSWERED_BEFORE_HANDOFF = 2;
+const CHAT_HISTORY_BREAKPOINT = 1100;
 const QUESTION_STOP_WORDS = new Set([
   "the", "and", "for", "with", "that", "this", "your", "you", "are", "have",
   "will", "would", "what", "when", "where", "which", "why", "from", "into",
@@ -421,6 +424,11 @@ export default function App() {
   const [usageError, setUsageError] = useState("");
   const [usageLoading, setUsageLoading] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(0);
+  const [isCompactViewport, setIsCompactViewport] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia(`(max-width: ${CHAT_HISTORY_BREAKPOINT}px)`).matches;
+  });
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const threadBoardRef = useRef(null);
 
   const ctx = currentSession?.ctx ?? createInitialContext();
@@ -495,6 +503,43 @@ export default function App() {
   }, [showApiPanel]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const mediaQuery = window.matchMedia(`(max-width: ${CHAT_HISTORY_BREAKPOINT}px)`);
+    const handleViewportChange = (event) => {
+      setIsCompactViewport(event.matches);
+      if (event.matches) {
+        setIsHistoryOpen(false);
+      }
+    };
+
+    setIsCompactViewport(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleViewportChange);
+      return () => mediaQuery.removeEventListener("change", handleViewportChange);
+    }
+
+    mediaQuery.addListener(handleViewportChange);
+    return () => mediaQuery.removeListener(handleViewportChange);
+  }, []);
+
+  useEffect(() => {
+    if (view !== "chat") return undefined;
+
+    const handleToggleHistoryShortcut = (event) => {
+      const isShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b";
+      if (!isShortcut) return;
+
+      event.preventDefault();
+      setIsHistoryOpen((current) => !current);
+    };
+
+    window.addEventListener("keydown", handleToggleHistoryShortcut);
+    return () => window.removeEventListener("keydown", handleToggleHistoryShortcut);
+  }, [view]);
+
+  useEffect(() => {
     if (view !== "home" && startedDecision) return undefined;
 
     const timer = setInterval(() => {
@@ -551,6 +596,7 @@ export default function App() {
       setCurrentSession(createDraftSession());
       setInputValue("");
       setView("chat");
+      setIsHistoryOpen(false);
     });
   }
 
@@ -562,6 +608,7 @@ export default function App() {
       setCurrentSession(next);
       setInputValue("");
       setView("chat");
+      setIsHistoryOpen(false);
     });
   }
 
@@ -1137,28 +1184,26 @@ export default function App() {
             </section>
           </main>
         ) : (
-          <>
-            <header className="topbar app-frame">
-              <div className="brand-block">
-                <h1>Decision Autopsy</h1>
-              </div>
-
-              <div className="topbar-actions">
-                <button
-                  className={`status-chip ${liveStatus}`}
-                  type="button"
-                  onClick={() => runWithTransition(() => setShowApiPanel(true))}
-                >
-                  <span className="status-dot" />
-                  {liveStatus === "online" ? "Live" : liveStatus === "offline" ? "Offline" : "Checking"}
-                </button>
-                <button className="ghost-btn icon-btn" type="button" onClick={closeChat} aria-label="Close chat">
-                  <span className="icon-plus close-mark" aria-hidden="true">×</span>
-                </button>
-              </div>
-            </header>
-
-          <main className="chat-layout screen-panel">
+          <ChatPageLayout
+            liveStatus={liveStatus}
+            onOpenUsagePanel={() => runWithTransition(() => setShowApiPanel(true))}
+            onCloseChat={closeChat}
+            isHistoryOpen={isHistoryOpen}
+            onToggleHistory={() => setIsHistoryOpen((value) => !value)}
+            isCompactViewport={isCompactViewport}
+            onCloseHistoryBackdrop={() => setIsHistoryOpen(false)}
+            historySidebar={(
+              <ChatHistorySidebar
+                isOpen={isHistoryOpen}
+                sessions={activeSessions}
+                currentSessionId={currentSession?.id}
+                onCollapse={() => setIsHistoryOpen(false)}
+                onNewChat={openNewChat}
+                onOpenSession={openSession}
+                onDeleteSession={deleteSession}
+              />
+            )}
+          >
             <section className="chat-shell chat-shell-wide app-frame">
               <div className="chat-shell-header simple-chat-header">
                 <div className="chat-thread-head">
@@ -1241,8 +1286,7 @@ export default function App() {
                 <div className="chat-bottom-spacer" />
               )}
             </section>
-          </main>
-          </>
+          </ChatPageLayout>
         )}
       </div>
     </>
