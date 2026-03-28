@@ -64,8 +64,6 @@ The frontend provides a chat-driven decision workflow:
 |- README.md
 ```
 
-Note: the `Decision-Autopsy/` directory contains a minimal duplicate README and appears to be legacy/non-runtime documentation.
-
 ## Prerequisites
 
 - Python 3.11+
