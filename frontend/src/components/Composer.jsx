@@ -5,6 +5,11 @@ export default function Composer({ value, onChange, onSubmit, disabled, placehol
   const controlled = typeof value === "string";
   const text = controlled ? value : localValue;
 
+  function submitText() {
+    if (disabled) return;
+    onSubmit(text);
+  }
+
   function setText(next) {
     if (controlled) {
       onChange(next);
@@ -19,12 +24,20 @@ export default function Composer({ value, onChange, onSubmit, disabled, placehol
       autoComplete="off"
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit(text);
+        submitText();
       }}
     >
       <textarea
         value={text}
         onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          if (event.shiftKey) return;
+          if (event.nativeEvent?.isComposing) return;
+
+          event.preventDefault();
+          submitText();
+        }}
         placeholder={placeholder}
         maxLength={500}
         disabled={disabled}
