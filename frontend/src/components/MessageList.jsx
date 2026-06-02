@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
+import FuturesPanel from "./FuturesPanel.jsx";
 
-export default function MessageList({ messages, isTyping, scrollContainerRef }) {
+export default function MessageList({ messages, isTyping, scrollContainerRef, futures, forkPoint }) {
   const shouldStickToBottomRef = useRef(true);
 
   useEffect(() => {
@@ -24,6 +25,14 @@ export default function MessageList({ messages, isTyping, scrollContainerRef }) 
   return (
     <>
       {messages.map((message) => {
+        if (message.type === "futures") {
+          return (
+            <section className="msg ai" key={message.id}>
+              <FuturesPanel futures={futures} forkPoint={forkPoint} />
+            </section>
+          );
+        }
+
         if (message.type === "user") {
           return (
             <article className="msg user" key={message.id}>
