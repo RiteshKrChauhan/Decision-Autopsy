@@ -13,7 +13,6 @@ import { createInitialContext } from "./state/context.js";
 import MessageList from "./components/MessageList.jsx";
 import QuestionCard from "./components/QuestionCard.jsx";
 import Composer from "./components/Composer.jsx";
-import FuturesPanel from "./components/FuturesPanel.jsx";
 import ChatHistorySidebar from "./components/ChatHistorySidebar.jsx";
 import ChatPageLayout from "./components/ChatPageLayout.jsx";
 
@@ -462,6 +461,27 @@ export default function App() {
   const chatTitle = ctx.decision || "New decision";
   const futures = Array.isArray(ctx.autopsy?.futures) ? ctx.autopsy.futures : [];
   const hasFutures = futures.length === 4;
+  const messagesWithFutures = useMemo(() => {
+    if (!hasFutures) return messages;
+    const hasFuturesMessage = messages.some((item) => item.type === "futures");
+    if (hasFuturesMessage) return messages;
+
+    const anchorIndex = messages.findIndex(
+      (item) => item.type === "ai" && item.content === "Your futures are ready. Read them together before you decide what to do next."
+    );
+    const insertAt = anchorIndex === -1 ? messages.length : anchorIndex + 1;
+
+    const futuresMessage = {
+      id: `futures-${currentSession?.id || "active"}`,
+      type: "futures",
+    };
+
+    return [
+      ...messages.slice(0, insertAt),
+      futuresMessage,
+      ...messages.slice(insertAt),
+    ];
+  }, [messages, hasFutures, currentSession?.id]);
   const homeQuote = useMemo(() => [
     "AI can help you make better decisions.",
     "See what each choice leads to before you live it.",
@@ -1237,9 +1257,11 @@ export default function App() {
                 ) : null}
 
                 <MessageList
-                  messages={messages}
+                  messages={messagesWithFutures}
                   isTyping={isTyping}
                   scrollContainerRef={threadBoardRef}
+                  futures={hasFutures ? futures : []}
+                  forkPoint={ctx.autopsy?.fork_point}
                 />
 
                 {pendingQuestion ? (
@@ -1264,12 +1286,6 @@ export default function App() {
                   </section>
                 ) : null}
 
-                {hasFutures ? (
-                  <FuturesPanel
-                    futures={futures}
-                    forkPoint={ctx.autopsy?.fork_point}
-                  />
-                ) : null}
               </section>
 
               {!startedDecision || hasFutures ? (
